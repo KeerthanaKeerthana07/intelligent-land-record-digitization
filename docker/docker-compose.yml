@@ -1,0 +1,109 @@
+# Docker Compose for Intelligent Land Record Digitization
+# Four services: PostgreSQL, OCR, Backend, Frontend
+
+services:
+  # 1. PostgreSQL Database
+  database:
+    image: postgres:16-alpine
+    container_name: land_records_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-land_records}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-land_records}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - land_record_network
+
+  # 2. OCR Microservice
+  ocr-service:
+    build:
+      context: ../ocr-service
+      dockerfile: Dockerfile
+    container_name: land_records_ocr
+    restart: unless-stopped
+    environment:
+      PORT: 8001
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8001/health || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - land_record_network
+
+  # 3. FastAPI Backend
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: land_records_backend
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+      ocr-service:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@database:5432/${POSTGRES_DB:-land_records}
+      OCR_SERVICE_URL: http://ocr-service:8001/extract
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-devops_super_secret_land_records_key_2026}
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - land_record_network
+
+  # 4. React Frontend with Nginx
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: land_records_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1" ]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - land_record_network
+
+networks:
+  land_record_network:
+    driver: bridge
+    name: land_record_network
+
+volumes:
+  postgres_data:
+    name: land_records_pgdata
+  backend_uploads:
+    name: land_records_uploads

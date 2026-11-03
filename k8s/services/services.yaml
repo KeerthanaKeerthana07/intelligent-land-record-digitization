@@ -1,0 +1,65 @@
+# Kubernetes Services for all Microservices
+apiVersion: v1
+kind: Service
+metadata:
+  name: database-service
+  labels:
+    app: database
+spec:
+  type: ClusterIP
+  selector:
+    app: database
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocr-service
+  labels:
+    app: ocr-service
+spec:
+  type: ClusterIP
+  selector:
+    app: ocr-service
+  ports:
+    - port: 8001
+      targetPort: 8001
+      name: ocr-http
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  labels:
+    app: backend
+spec:
+  type: NodePort
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30800
+      name: api-http
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  labels:
+    app: frontend
+spec:
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+      name: web-http
